@@ -22,20 +22,28 @@ class FoFa(Search):
         发送搜索请求并做子域匹配
         """
         self.page_num = 1
-        query_data = base64.b64encode(f'domain={self.domain}'.encode('utf-8'))
+        subdomain_encode = f'domain={self.domain}'.encode('utf-8')
+        query_data = base64.b64encode(subdomain_encode)
         while True:
             time.sleep(self.delay)
             self.header = self.get_header()
             self.proxy = self.get_proxy(self.source)
-            query = {'email': self.email, 'key': self.key,
-                     'qbase64': query_data, 'page': self.page_num}
+            query = {'email': self.email,
+                     'key': self.key,
+                     'qbase64': query_data,
+                     'page': self.page_num,
+                     'size': 10000}
             resp = self.get(self.addr, query)
             if not resp:
                 return
-            subdomain_find = self.match(self.domain, resp.text)
-            if not subdomain_find:  # 搜索没有发现子域名则停止搜索
+            resp_json = resp.json()
+            subdomains = self.match(self.domain, str(resp_json))
+            if not subdomains:  # 搜索没有发现子域名则停止搜索
                 break
-            self.subdomains = self.subdomains.union(subdomain_find)
+            self.subdomains = self.subdomains.union(subdomains)
+            size = resp_json.get('size')
+            if size < 10000:
+                break
             self.page_num += 1
 
     def run(self):

@@ -1,4 +1,3 @@
-import time
 from common import utils
 from common.query import Query
 
@@ -15,16 +14,16 @@ class Entrust(Query):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
-        params = {'fields': 'subjectDN', 'domain': self.domain,
+        params = {'fields': 'subjectDN',
+                  'domain': self.domain,
                   'includeExpired': 'true'}
         resp = self.get(self.addr, params)
         if not resp:
             return
-        subdomains_find = utils.match_subdomain(self.domain, str(resp.json()))
-        self.subdomains = self.subdomains.union(subdomains_find)
+        subdomains = utils.match_subdomain(self.domain, str(resp.json()))
+        self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

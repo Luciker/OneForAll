@@ -10,7 +10,7 @@ class PTRArchive(Query):
         self.domain = self.register(domain)
         self.module = 'Dataset'
         self.source = "PTRArchiveQuery"
-        self.addr = 'http://ptrarchive.com/tools/search3.htm'
+        self.addr = 'http://ptrarchive.com/tools/search4.htm'
 
     def query(self):
         """
@@ -25,10 +25,10 @@ class PTRArchive(Query):
         if not resp:
             return
         if resp.status_code == 200:
-            subdomains_find = utils.match_subdomain(self.domain, resp.text)
-            if subdomains_find:
+            subdomains = utils.match_subdomain(self.domain, resp.text)
+            if subdomains:
                 # 合并搜索子域名搜索结果
-                self.subdomains = self.subdomains.union(subdomains_find)
+                self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

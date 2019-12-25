@@ -21,9 +21,11 @@ class VirusTotalAPI(Query):
         resp = self.get(self.addr, params)
         if not resp:
             return
-        resp_json = resp.json()
-        subdomain_find = set(resp_json.get('subdomains'))
-        self.subdomains = self.subdomains.union(subdomain_find)
+        json = resp.json()
+        data = json.get('subdomains')
+        if data:
+            subdomains = set(data)
+            self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

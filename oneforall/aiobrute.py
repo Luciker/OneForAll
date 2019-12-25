@@ -8,11 +8,11 @@ OneForAll多进程多协程异步子域爆破模块
 :license: GNU General Public License v3.0, see LICENSE for more details.
 """
 
-import asyncio
-import queue
-import secrets
-import signal
 import time
+import queue
+import signal
+import asyncio
+import secrets
 
 import aiomultiprocess as aiomp
 import exrex
@@ -39,19 +39,22 @@ def detect_wildcard(domain):
     :return: 如果没有使用泛解析返回False 反之返回泛解析的IP集合和ttl整型值
     """
     logger.log('INFOR', f'正在探测{domain}是否使用泛解析')
-    token = secrets.token_hex(16)
+    token = secrets.token_hex(4)
     random_subdomain = f'{token}.{domain}'
     try:
-        answers = resolve.dns_query_a(random_subdomain)
+        resolver = resolve.dns_resolver()
+        answers = resolver.query(random_subdomain, 'A')
     # 如果查询随机域名A记录出错 说明不存在随机子域的A记录 即没有开启泛解析
     except Exception as e:
         logger.log('DEBUG', e)
         logger.log('INFOR', f'{domain}没有使用泛解析')
         return False, None, None
     ttl = answers.ttl
+    name = answers.name
     ips = {item.address for item in answers}
     logger.log('ALERT', f'{domain}使用了泛解析')
-    logger.log('ALERT', f'{random_subdomain} 解析到IP: {ips} TTL: {ttl}')
+    logger.log('ALERT', f'{random_subdomain} 解析到域名: {name} '
+                        f'IP: {ips} TTL: {ttl}')
     return True, ips, ttl
 
 
@@ -132,24 +135,24 @@ class AIOBrute(Module):
     OneForAll多进程多协程异步子域爆破模块
 
     Example：
-        python3 aiobrute.py --target example.com run
-        python3 aiobrute.py --target ./domains.txt run
-        python3 aiobrute.py --target example.com --processes 4 --coroutine 64
-        python3 aiobrute.py --target example.com --wordlist subdomains.txt run
+        python3 aiobrute.py --target subdomain.com run
+        python3 aiobrute.py --target ./subdomains.txt run
+        python3 aiobrute.py --target example.com --process 4 --coroutine 64 run
+        python3 aiobrute.py --target example.com --wordlist subnames.txt run
         python3 aiobrute.py --target example.com --recursive True --depth 2 run
         python3 aiobrute.py --target m.{fuzz}.a.bz --fuzz True --rule [a-z] run
 
     Note:
-        参数segment的设置受CPU性能，网络带宽，运营商限制等问题影响，默认设置500个子域为任务组，
-        当你觉得你的环境不受以上因素影响，当前爆破速度较慢，那么强烈建议根据字典大小调整大小：
+        参数segment的设置受CPU性能，网络带宽，运营商限制等限制，默认500个子域为任务组，
+        当你的环境不受以上因素影响，当前爆破速度较慢，那么强烈建议根据字典大小调整大小：
         十万字典建议设置为5000，百万字典设置为50000
         参数valid可选值1，0，None，分别表示导出有效，无效，全部子域
-        参数format可选格式：'csv', 'tsv', 'json', 'yaml', 'html', 'xls', 'xlsx',
-                         'dbf', 'latex', 'ods'
+        参数format可选格式有'txt', 'rst', 'csv', 'tsv', 'json', 'yaml', 'html',
+                          'jira', 'xls', 'xlsx', 'dbf', 'latex', 'ods'
         参数path为None会根据format参数和域名名称在项目结果目录生成相应文件
 
     :param str target:       单个域名或者每行一个域名的文件路径
-    :param int processes:    爆破的进程数(默认CPU核心数)
+    :param int process:      爆破的进程数(默认CPU核心数)
     :param int coroutine:    每个爆破进程下的协程数(默认64)
     :param str wordlist:     指定爆破所使用的字典路径(默认使用config.py配置)
     :param int segment:      爆破任务分割(默认500)
@@ -160,14 +163,14 @@ class AIOBrute(Module):
     :param str rule:         fuzz模式使用的正则规则(默认使用config.py配置)
     :param bool export:      是否导出爆破结果(默认True)
     :param int valid:        导出子域的有效性(默认None)
-    :param str format:       导出格式(默认xlsx)
+    :param str format:       导出格式(默认csv)
     :param str path:         导出路径(默认None)
     :param bool show:        终端显示导出数据(默认False)
     """
 
-    def __init__(self, target, processes=None, coroutine=64, wordlist=None,
+    def __init__(self, target, process=None, coroutine=64, wordlist=None,
                  segment=500, recursive=False, depth=2, namelist=None,
-                 fuzz=False, rule=None, export=True, valid=None, format='xlsx',
+                 fuzz=False, rule=None, export=True, valid=None, format='csv',
                  path=None, show=False):
         Module.__init__(self)
         self.domains = set()
@@ -175,7 +178,7 @@ class AIOBrute(Module):
         self.module = 'Brute'
         self.source = 'AIOBrute'
         self.target = target
-        self.processes = processes or config.brute_processes_num
+        self.process = process or config.brute_process_num
         self.coroutine = coroutine or config.brute_coroutine_num
         self.wordlist = wordlist or config.brute_wordlist_path
         self.segment = segment or config.brute_task_segment
@@ -196,7 +199,7 @@ class AIOBrute(Module):
         self.wildcard_ttl = int()  # 泛解析TTL整型值
 
     def gen_tasks(self, domain):
-        # 如果domain不是self.domain，而是self.domain的子域 生成递归爆破字典
+        # 如果domain不是self.subdomain，而是self.domain的子域 生成递归爆破字典
         if self.domain != domain:
             logger.log('INFOR', f'使用{self.recursive_namelist}字典')
             domains = gen_brute_domains(domain, self.recursive_namelist)
@@ -210,26 +213,35 @@ class AIOBrute(Module):
         return utils.split_list(domains, self.segment)  # 分割任务组
 
     def deal_results(self, results):
-        for result in results:
-            if isinstance(result, Exception):
+        for answer in results:
+            if answer is None:
+                continue
+            if isinstance(answer, Exception):
                 # logger.log('DEBUG', f'爆破{subdomain}时出错 {str(answers)}')
                 continue
-            if isinstance(result, tuple):
-                subdomain, answers = result
-                if not answers:
+            ips = {item.address for item in answer}
+            # 取值 如果是首次出现的IP集合 出现次数先赋值0
+            value = self.ips_times.setdefault(str(ips), 0)
+            self.ips_times[str(ips)] = value + 1
+            ttl = answer.rrset.ttl
+            subdomain = str(answer.rrset.name)
+            # 目前域名开启了泛解析
+            if self.enable_wildcard:
+                # 通过对比查询的子域和响应的子域来判断真实子域
+                # 去掉解析到CDN的情况
+                if not subdomain.endswith(self.domain + '.'):
                     continue
-                ips = {record.host for record in answers}
-                # 取值 如果是首次出现的IP集合 出现次数先赋值0
-                value = self.ips_times.setdefault(str(ips), 0)
-                self.ips_times[str(ips)] = value + 1
-                ttl = answers[0].ttl
-                if self.enable_wildcard:
-                    if wildcard_by_compare(ips, ttl,
-                                           self.wildcard_ips,
-                                           self.wildcard_ttl):
-                        continue
+                # 通过对比解析到的IP集合和TTL确定子域来判断真实子域
+                if wildcard_by_compare(ips,
+                                       ttl,
+                                       self.wildcard_ips,
+                                       self.wildcard_ttl):
+                    continue
+                # 通过对比解析到的IP集合的次数来判断真实子域
                 if wildcard_by_times(ips, self.ips_times):
                     continue
+            # 只添加没有出现过的子域
+            if subdomain not in self.subdomains:
                 logger.log('INFOR', f'发现{self.domain}的子域: {subdomain} '
                                     f'解析IP: {ips} TTL: {ttl}')
                 self.subdomains.add(subdomain)
@@ -237,16 +249,19 @@ class AIOBrute(Module):
 
     async def main(self, domain, rx_queue):
         if not self.fuzz:  # fuzz模式不探测域名是否使用泛解析
-            self.enable_wildcard, self.wildcard_ips, self.wildcard_ttl = detect_wildcard(domain)
+            self.enable_wildcard, self.wildcard_ips, self.wildcard_ttl \
+                = detect_wildcard(domain)
         tasks = self.gen_tasks(domain)
         logger.log('INFOR', f'正在爆破{domain}的域名')
-        for task in tqdm.tqdm(tasks, desc='Progress',
-                              smoothing=1.0, ncols=True):
-            async with aiomp.Pool(processes=self.processes,
+        for task in tqdm.tqdm(tasks,
+                              desc='Progress',
+                              smoothing=1.0,
+                              ncols=True):
+            async with aiomp.Pool(processes=self.process,
                                   initializer=init_worker,
                                   childconcurrency=self.coroutine) as pool:
                 try:
-                    results = await pool.map(resolve.aiodns_query_a, task)
+                    results = await pool.map(resolve.dns_query_a, task)
                 except KeyboardInterrupt:
                     logger.log('ALERT', '爆破终止正在退出')
                     pool.terminate()  # 关闭pool，结束工作进程，不在处理未完成的任务。
@@ -269,7 +284,7 @@ class AIOBrute(Module):
             if not rx_queue:
                 rx_queue = queue.Queue()
             logger.log('INFOR', f'开始执行{self.source}模块爆破域名{self.domain}')
-            logger.log('INFOR', f'使用{self.processes}进程乘{self.coroutine}协程')
+            logger.log('INFOR', f'使用{self.process}进程乘{self.coroutine}协程')
             # fuzz模式不使用递归爆破
             if self.recursive_brute and not self.fuzz:
                 logger.log('INFOR', f'开始递归爆破{self.domain}的第1层子域')
@@ -286,7 +301,8 @@ class AIOBrute(Module):
                                         f'第{layer_num + 1}层子域')
                     for subdomain in self.subdomains.copy():
                         # 进行下一层子域爆破的限制条件
-                        if subdomain.count('.') - self.domain.count('.') == layer_num:
+                        if subdomain.count('.') - self.domain.count('.') \
+                                == layer_num:
                             loop.run_until_complete(self.main(subdomain,
                                                               rx_queue))
             # 队列不空就一直取数据存数据库
@@ -310,7 +326,7 @@ class AIOBrute(Module):
                     self.path = config.result_save_path.joinpath(name)
                 dbexport.export(self.domain,
                                 valid=self.valid,
-                                path=self.path,
+                                dpath=self.path,
                                 format=self.format,
                                 show=self.show)
 

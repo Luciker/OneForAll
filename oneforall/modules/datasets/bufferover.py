@@ -1,5 +1,6 @@
-import time
+import cloudscraper
 from common.query import Query
+from config import logger
 
 
 class BufferOver(Query):
@@ -8,22 +9,27 @@ class BufferOver(Query):
         self.domain = self.register(domain)
         self.module = 'Dataset'
         self.source = 'BufferOverQuery'
-        self.addr = 'https://dns.bufferover.run/dns'
+        self.addr = 'https://dns.bufferover.run/dns?q='
 
     def query(self):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
-        self.header = self.get_header()
-        self.proxy = self.get_proxy(self.source)
-        params = {'q': self.domain}
-        resp = self.get(self.addr, params)
-        if not resp:
+        # 绕过cloudFlare验证
+        scraper = cloudscraper.create_scraper()
+        scraper.interpreter = 'js2py'
+        scraper.proxies = self.get_proxy(self.source)
+        url = self.addr + self.domain
+        try:
+            resp = scraper.get(url, timeout=self.timeout)
+        except Exception as e:
+            logger.log('ERROR', e.args)
             return
-        subdomains_find = self.match(self.domain, resp.text)
+        if resp.status_code != 200:
+            return
+        subdomains = self.match(self.domain, str(resp.json()))
         # 合并搜索子域名搜索结果
-        self.subdomains = self.subdomains.union(subdomains_find)
+        self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

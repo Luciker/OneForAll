@@ -30,14 +30,14 @@ class DuckDuckGO(Search):
             resp = self.post(self.addr, data)
             if not resp:
                 return
-            subdomain_find = self.match(domain, resp.text)
-            if not subdomain_find:
+            subdomains = self.match(domain, resp.text)
+            if not subdomains:
                 break
             if not full_search:
                 # 搜索中发现搜索出的结果有完全重复的结果就停止搜索
-                if subdomain_find.issubset(self.subdomains):
+                if subdomains.issubset(self.subdomains):
                     break
-            self.subdomains = self.subdomains.union(subdomain_find)
+            self.subdomains = self.subdomains.union(subdomains)
             try:
                 s = re.findall(r'name="s" value="(\d.*)"', resp.text)[-1]
                 dc = re.findall(r'name="dc" value="(\d.*)"', resp.text)
@@ -87,4 +87,4 @@ def do(domain):  # 统一入口名字 方便多线程调用
 
 if __name__ == '__main__':
 
-    do('example.com')
+    do('huawei.com')

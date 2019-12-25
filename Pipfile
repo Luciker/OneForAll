@@ -6,7 +6,6 @@ verify_ssl = true
 [dev-packages]
 
 [packages]
-aiodns = "*"
 tqdm = "*"
 aiomultiprocess = "*"
 loguru = "*"
@@ -16,11 +15,14 @@ records = "*"
 tldextract = "*"
 exrex = "*"
 aiohttp = "*"
-fire = "==0.2.1"
+fire = "*"
 bs4 = "*"
-cchardet = "*"
 lxml = "*"
 pysocks = "*"
+cloudscraper = "*"
+js2py = "*"
+tablib = "*"
+brotli = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "3.8"

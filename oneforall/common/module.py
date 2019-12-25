@@ -15,7 +15,6 @@ from . import utils
 from .domain import Domain
 from common.database import Database
 
-
 lock = threading.Lock()
 
 
@@ -62,16 +61,45 @@ class Module(object):
         self.elapsed = round(self.end - self.start, 1)
         logger.log('DEBUG', f'结束执行{self.source}模块收集{self.domain}的子域')
         logger.log('INFOR', f'{self.source}模块耗时{self.elapsed}秒发现子域'
-                   f'{len(self.subdomains)}个')
+                            f'{len(self.subdomains)}个')
         logger.log('DEBUG', f'{self.source}模块发现{self.domain}的子域\n'
-                   f'{self.subdomains}')
+                            f'{self.subdomains}')
 
-    def get(self, url, params=None, **kwargs):
+    def head(self, url, params=None, check=True, **kwargs):
+        """
+        自定义head请求
+
+        :param str url: 请求地址
+        :param dict params: 请求参数
+        :param bool check: 检查响应
+        :param kwargs: 其他参数
+        :return: requests响应对象
+        """
+        try:
+            resp = requests.head(url,
+                                 params=params,
+                                 cookies=self.cookie,
+                                 headers=self.header,
+                                 proxies=self.proxy,
+                                 timeout=self.timeout,
+                                 verify=self.verify,
+                                 **kwargs)
+        except Exception as e:
+            logger.log('ERROR', e.args)
+            return None
+        if not check:
+            return resp
+        if utils.check_response('HEAD', resp):
+            return resp
+        return None
+
+    def get(self, url, params=None, check=True, **kwargs):
         """
         自定义get请求
 
         :param str url: 请求地址
         :param dict params: 请求参数
+        :param bool check: 检查响应
         :param kwargs: 其他参数
         :return: requests响应对象
         """
@@ -85,31 +113,21 @@ class Module(object):
                                 verify=self.verify,
                                 **kwargs)
         except Exception as e:
-            logger.log('ERROR', e)
+            logger.log('ERROR', e.args)
             return None
-        # 状态码非200或者响应体为空
-        if resp.status_code != 200 or not resp.content:
-            logger.log('ALERT', f'GET {resp.url} {resp.status_code} - '
-                       f'{resp.reason} {len(resp.content)}')
-            content_type = resp.headers.get('Content-Type')
-            if content_type and 'json' in content_type and resp.content:
-                try:
-                    msg = resp.json()
-                except Exception as e:
-                    logger.log('DEBUG', e.args)
-                else:
-                    logger.log('ALERT', msg)
-            return None
-        logger.log('DEBUG', f'GET {resp.url} {resp.status_code} - '
-                   f'{resp.reason} {len(resp.content)}')
-        return resp
+        if not check:
+            return resp
+        if utils.check_response('GET', resp):
+            return resp
+        return None
 
-    def post(self, url, data=None, **kwargs):
+    def post(self, url, data=None, check=True, **kwargs):
         """
         自定义post请求
 
         :param str url: 请求地址
         :param dict data: 请求数据
+        :param bool check: 检查响应
         :param kwargs: 其他参数
         :return: requests响应对象
         """
@@ -123,22 +141,13 @@ class Module(object):
                                  verify=self.verify,
                                  **kwargs)
         except Exception as e:
-            logger.log('ERROR', e)
+            logger.log('ERROR', e.args)
             return None
-        # 状态码非200或者响应体为空
-        if resp.status_code != 200 or not resp.content:
-            content_type = resp.headers.get('Content-Type')
-            if content_type and 'json' in content_type and resp.content:
-                try:
-                    msg = resp.json()
-                except Exception as e:
-                    logger.log('DEBUG', e.args)
-                else:
-                    logger.log('ALERT', msg)
-            return None
-        logger.log('DEBUG', f'POST {resp.url} {resp.status_code} - '
-                   f'{resp.reason} {len(resp.content)}')
-        return resp
+        if not check:
+            return resp
+        if utils.check_response('POST', resp):
+            return resp
+        return None
 
     def get_header(self):
         """
@@ -238,8 +247,11 @@ class Module(object):
                       'status': None,
                       'reason': None,
                       'valid': None,
+                      'new': None,
                       'title': None,
                       'banner': None,
+                      'header': None,
+                      'response': None,
                       'module': self.module,
                       'source': self.source,
                       'elapsed': self.elapsed,
@@ -258,9 +270,12 @@ class Module(object):
                           'status': None,
                           'reason': None,
                           'valid': None,
+                          'new': None,
                           'title': None,
                           'banner': None,
                           'module': self.module,
+                          'header': None,
+                          'response': None,
                           'source': self.source,
                           'elapsed': self.elapsed,
                           'count': len(self.subdomains)}
@@ -274,4 +289,5 @@ class Module(object):
         source, results = self.results
         # 将结果存入数据库中
         db.save_db(self.domain, results, source)
+        db.close()
         lock.release()

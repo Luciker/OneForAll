@@ -1,4 +1,3 @@
-import time
 import config
 from common.query import Query
 
@@ -16,7 +15,6 @@ class BinaryEdgeAPI(Query):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.header.update({'X-Key': self.api})
         self.proxy = self.get_proxy(self.source)
@@ -24,8 +22,8 @@ class BinaryEdgeAPI(Query):
         resp = self.get(url)
         if not resp:
             return
-        subdomains_find = self.match(self.domain, str(resp.json()))
-        self.subdomains = self.subdomains.union(subdomains_find)
+        subdomains = self.match(self.domain, str(resp.json()))
+        self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

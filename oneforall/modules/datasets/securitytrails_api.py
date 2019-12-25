@@ -1,4 +1,3 @@
-import time
 import config
 from common.query import Query
 
@@ -17,7 +16,6 @@ class SecurityTrailsAPI(Query):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
         params = {'apikey': self.api}
@@ -26,10 +24,10 @@ class SecurityTrailsAPI(Query):
         if not resp:
             return
         prefixs = resp.json()['subdomains']
-        subdomains_find = [f'{prefix}.{self.domain}' for prefix in prefixs]
-        if subdomains_find:
+        subdomains = [f'{prefix}.{self.domain}' for prefix in prefixs]
+        if subdomains:
             # 合并搜索子域名搜索结果
-            self.subdomains = self.subdomains.union(subdomains_find)
+            self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

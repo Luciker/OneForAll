@@ -1,4 +1,3 @@
-import time
 from common import utils
 from common.query import Query
 
@@ -16,17 +15,17 @@ class Google(Query):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
-        params = {'include_expired': 'true', 'include_subdomains': 'true',
+        params = {'include_expired': 'true',
+                  'include_subdomains': 'true',
                   'domain': self.domain}
         resp = self.get(self.addr, params)
         if not resp:
             return
-        subdomains_find = utils.match_subdomain(self.domain, resp.text)
+        subdomains = utils.match_subdomain(self.domain, resp.text)
         # 合并搜索子域名搜索结果
-        self.subdomains = self.subdomains.union(subdomains_find)
+        self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

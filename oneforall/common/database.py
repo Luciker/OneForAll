@@ -13,10 +13,10 @@ from config import logger
 
 class Database(object):
     def __init__(self, db_path=None):
-        self.conn = self.get_connection(db_path)
+        self.conn = self.get_conn(db_path)
 
     @staticmethod
-    def get_connection(db_path):
+    def get_conn(db_path):
         """
         获取数据库对象
 
@@ -35,32 +35,40 @@ class Database(object):
         logger.log('DEBUG', f'使用数据库: {db_path}')
         return db.get_connection()
 
+    def query(self, sql):
+        try:
+            results = self.conn.query(sql)
+        except Exception as e:
+            logger.log('ERROR', e.args)
+        else:
+            return results
+
     def create_table(self, table_name):
         """
-        初始化数据库
+        创建表结构
 
         :param str table_name: 要创建的表名
         """
         table_name = table_name.replace('.', '_')
         logger.log('DEBUG', f'正在创建{table_name}表')
-        try:
-            self.conn.query(f'create table if not exists "{table_name}" ('
-                            f'id integer primary key,'
-                            f'url text,'
-                            f'subdomain text,'
-                            f'port int,'
-                            f'ips text,'
-                            f'status int,'
-                            f'reason text,'
-                            f'valid int,'
-                            f'title text,'
-                            f'banner text,'
-                            f'module text,'
-                            f'source text,'
-                            f'elapsed float,'
-                            f'count int)')
-        except Exception as e:
-            logger.log('ERROR', e)
+        self.query(f'create table if not exists "{table_name}" ('
+                   f'id integer primary key,'
+                   f'url text,'
+                   f'subdomain text,'
+                   f'port int,'
+                   f'ips text,'
+                   f'status int,'
+                   f'reason text,'
+                   f'valid int,'
+                   f'new int,'
+                   f'title text,'
+                   f'banner text,'
+                   f'header text,'
+                   f'response text,'
+                   f'module text,'
+                   f'source text,'
+                   f'elapsed float,'
+                   f'count int)')
 
     def save_db(self, table_name, results, module_name=None):
         """
@@ -70,20 +78,38 @@ class Database(object):
         :param list results: 结果列表
         :param str module_name: 模块名
         """
-        logger.log('DEBUG', f'正在将{module_name}模块发现{table_name}的子域结果存入数据库')
+        logger.log('DEBUG', f'正在将{module_name}模块发现{table_name}的子域'
+                            '结果存入数据库')
         table_name = table_name.replace('.', '_')
         if results:
             try:
                 self.conn.bulk_query(
                     f'insert into "{table_name}" ('
                     f'id, url, subdomain, port, ips, status, reason, valid,'
-                    f'title, banner, module, source, elapsed, count)'
+                    f'new, title, banner, header, response, module, source, '
+                    f'elapsed, count)'
                     f'values (:id, :url, :subdomain, :port, :ips, :status,'
-                    f':reason, :valid, :title, :banner, :module, :source,'
-                    f':elapsed, :count)',
+                    f':reason, :valid, :new, :title, :banner, :header,'
+                    f':response, :module, :source,:elapsed, :count)',
                     results)
             except Exception as e:
-                logger.log('ERROR', e)
+                logger.log('ERROR', e.args)
+
+    def exist_table(self, table_name):
+        """
+        判断是否存在某表
+
+        :param str table_name: 表名
+        """
+        table_name = table_name.replace('.', '_')
+        logger.log('DEBUG', f'正在查询是否存在{table_name}表')
+        results = self.query(f'select count() from sqlite_master '
+                             f'where type = "table" and '
+                             f'name = "{table_name}"')
+        if len(results) != 0:
+            return True
+        else:
+            return False
 
     def copy_table(self, table_name, bak_table_name):
         """
@@ -95,12 +121,9 @@ class Database(object):
         table_name = table_name.replace('.', '_')
         bak_table_name = bak_table_name.replace('.', '_')
         logger.log('DEBUG', f'正在将{table_name}表复制到{bak_table_name}新表')
-        try:
-            self.conn.query(f'drop table if exists "{bak_table_name}"')
-            self.conn.query(f'create table "{bak_table_name}" '
-                            f'as select * from "{table_name}"')
-        except Exception as e:
-            logger.log('ERROR', e)
+        self.query(f'drop table if exists "{bak_table_name}"')
+        self.query(f'create table "{bak_table_name}" '
+                   f'as select * from "{table_name}"')
 
     def clear_table(self, table_name):
         """
@@ -110,10 +133,7 @@ class Database(object):
         """
         table_name = table_name.replace('.', '_')
         logger.log('DEBUG', f'正在清空{table_name}表中的数据')
-        try:
-            self.conn.query(f'delete from "{table_name}"')
-        except Exception as e:
-            logger.log('ERROR', e)
+        self.query(f'delete from "{table_name}"')
 
     def drop_table(self, table_name):
         """
@@ -123,14 +143,11 @@ class Database(object):
         """
         table_name = table_name.replace('.', '_')
         logger.log('DEBUG', f'正在删除{table_name}表')
-        try:
-            self.conn.query(f'drop table if exists "{table_name}"')
-        except Exception as e:
-            logger.log('ERROR', e)
+        self.query(f'drop table if exists "{table_name}"')
 
     def rename_table(self, table_name, new_table_name):
         """
-        复制表创建备份
+        重命名表名
 
         :param str table_name: 表名
         :param str new_table_name: 新表名
@@ -138,11 +155,8 @@ class Database(object):
         table_name = table_name.replace('.', '_')
         new_table_name = new_table_name.replace('.', '_')
         logger.log('DEBUG', f'正在将{table_name}表重命名为{table_name}表')
-        try:
-            self.conn.query(f'alter table "{table_name}" '
-                            f'rename to "{new_table_name}"')
-        except Exception as e:
-            logger.log('ERROR', e)
+        self.query(f'alter table "{table_name}" '
+                   f'rename to "{new_table_name}"')
 
     def deduplicate_subdomain(self, table_name):
         """
@@ -152,12 +166,9 @@ class Database(object):
         """
         table_name = table_name.replace('.', '_')
         logger.log('DEBUG', f'正在去重{table_name}表中的子域')
-        try:
-            self.conn.query(
-                f'delete from "{table_name}" where id not in (select min(id) '
-                f'from "{table_name}" group by subdomain)')
-        except Exception as e:
-            logger.log('ERROR', e)
+        self.query(f'delete from "{table_name}" where '
+                   f'id not in (select min(id) '
+                   f'from "{table_name}" group by subdomain)')
 
     def remove_invalid(self, table_name):
         """
@@ -167,12 +178,8 @@ class Database(object):
         """
         table_name = table_name.replace('.', '_')
         logger.log('DEBUG', f'正在去除{table_name}表中的无效子域')
-        try:
-            self.conn.query(
-                f'delete from "{table_name}" where '
-                f'subdomain is null or valid == 0')
-        except Exception as e:
-            logger.log('ERROR', e)
+        self.query(f'delete from "{table_name}" where '
+                   f'subdomain is null or valid == 0')
 
     def get_data(self, table_name):
         """
@@ -182,26 +189,23 @@ class Database(object):
         """
         table_name = table_name.replace('.', '_')
         logger.log('DEBUG', f'获取{table_name}表中的所有数据')
-        try:
-            rows = self.conn.query(f'select * from "{table_name}"')
-        except Exception as e:
-            logger.log('ERROR', e)
-        else:
-            return rows
+        return self.query(f'select * from "{table_name}"')
 
-    def get_subdomain(self, table_name, valid):
+    def export_data(self, table_name, valid):
         """
-        获取表中的子域数据
+        获取表中的部分数据
 
         :param str table_name: 表名
-        :param int valid: 是否有效
+        :param any valid: 有效性
         """
         table_name = table_name.replace('.', '_')
+        query = f'select id, url, subdomain, port, ips, status, reason,' \
+                f'valid, new, title, banner from "{table_name}"'
+        if valid == 0 or valid == 1:
+            where = f' where valid = {valid}'
+            query += where
         logger.log('DEBUG', f'获取{table_name}表中的所有数据')
-        try:
-            rows = self.conn.query(
-                f'select * from "{table_name}" where valid = {valid}')
-        except Exception as e:
-            logger.log('ERROR', e)
-        else:
-            return rows
+        return self.query(query)
+
+    def close(self):
+        self.conn.close()

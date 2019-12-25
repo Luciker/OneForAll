@@ -1,10 +1,10 @@
 # coding=utf-8
 import re
-import pathlib
 import random
 import ipaddress
 import platform
 import config
+from pathlib import Path
 from common.domain import Domain
 from config import logger
 
@@ -109,20 +109,22 @@ def get_domains(target):
     :param set or str target:
     :return: 域名集合
     """
-    domains = set()
-    logger.log('INFOR', f'正在获取域名')
-    if isinstance(target, set):
+    domains = list()
+    logger.log('DEBUG', f'正在获取域名')
+    if isinstance(target, (set, tuple)):
+        domains = list(target)
+    elif isinstance(target, list):
         domains = target
     elif isinstance(target, str):
-        path = pathlib.Path(target)
+        path = Path(target)
         if path.is_file():
             with open(target) as file:
                 for line in file:
                     domain = Domain(line.strip()).match()
                     if domain:
-                        domains.add(domain)
-        if Domain(target).match():
-            domains = {target}
+                        domains.append(domain)
+        elif Domain(target).match():
+            domains = [target]
     logger.log('INFOR', f'获取到{len(domains)}个域名')
     return domains
 
@@ -135,8 +137,99 @@ def get_semaphore():
     """
     system = platform.system()
     if system == 'Windows':
-        return 300
+        return 800
     elif system == 'Linux':
         return 800
     elif system == 'Darwin':
         return 800
+
+
+def check_dpath(dpath):
+    """
+    检查目录路径
+
+    :param dpath: 传入的目录路径
+    :return: 目录路径
+    """
+    if isinstance(dpath, str):
+        dpath = Path(dpath)
+    else:
+        dpath = config.result_save_path
+    if not dpath.is_dir():
+        logger.log('FATAL', f'{dpath}不是目录')
+    if not dpath.exists():
+        logger.log('ALERT', f'不存在{dpath}将会新建此目录')
+        dpath.mkdir(parents=True, exist_ok=True)
+    return dpath
+
+
+def check_format(format):
+    """
+    检查导出格式
+
+    :param format: 传入的导出格式
+    :return: 导出格式
+    """
+    formats = ['txt', 'rst', 'csv', 'tsv', 'json', 'yaml', 'html',
+               'jira', 'xls', 'xlsx', 'dbf', 'latex', 'ods']
+    if format in formats:
+        return format
+    else:
+        logger.log('ALERT', f'不支持{format}格式导出')
+        logger.log('ALERT', '默认使用csv格式导出')
+        return 'xls'
+
+
+def save_data(fpath, data):
+    try:
+        with open(fpath, 'w', encoding="utf-8", newline='') as file:
+            file.write(data)
+            logger.log('ALERT', fpath)
+    except TypeError:
+        with open(fpath, 'wb') as file:
+            file.write(data)
+            logger.log('ALERT', fpath)
+    except Exception as e:
+        logger.log('ERROR', e.args)
+
+
+def check_response(method, resp):
+    if resp.status_code == 200 and resp.content:
+        return True
+    logger.log('ALERT', f'{method} {resp.url} {resp.status_code} - '
+                        f'{resp.reason} {len(resp.content)}')
+    content_type = resp.headers.get('Content-Type')
+    if content_type and 'json' in content_type and resp.content:
+        try:
+            msg = resp.json()
+        except Exception as e:
+            logger.log('DEBUG', e.args)
+        else:
+            logger.log('ALERT', msg)
+    return False
+
+
+def mark_subdomain(old_data, new_data):
+    """
+    标记新增子域并返回新的数据集
+
+    :param old_data: 之前数据集
+    :param new_data: 现在数据集
+    :return: 已标记的新的数据集
+    """
+    # 第一次收集子域的情况
+    if not old_data:
+        for index, item in enumerate(new_data):
+            item['new'] = 1
+            new_data[index] = item
+        return new_data
+    # 非第一次收集子域的情况
+    old_subdomains = {item.get('subdomain') for item in old_data}
+    for index, item in enumerate(new_data):
+        subdomain = item.get('subdomain')
+        if subdomain in old_subdomains:
+            item['new'] = 0
+        else:
+            item['new'] = 1
+        new_data[index] = item
+    return new_data

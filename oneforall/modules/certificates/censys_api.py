@@ -1,4 +1,3 @@
-import time
 import config
 from common.query import Query
 from config import logger
@@ -22,29 +21,28 @@ class CensysAPI(Query):
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
         data = {
-            'query': 'parsed.names: example.com',
+            'query': f'parsed.names: {self.domain}',
             'page': 1,
-            'fields': ['parsed.subject_dn'],
+            'fields': ['parsed.subject_dn', 'parsed.names'],
             'flatten': True}
         resp = self.post(self.addr, json=data, auth=(self.id, self.secret))
         if not resp:
             return
-        resp_json = resp.json()
-        status = resp_json.get('status')
+        json = resp.json()
+        status = json.get('status')
         if status != 'ok':
             logger.log('ALERT', status)
             return
-        subdomains_find = self.match(self.domain, str(resp_json))
-        self.subdomains = self.subdomains.union(subdomains_find)
-        pages = resp_json.get('metadata').get('pages')
+        subdomains = self.match(self.domain, str(json))
+        self.subdomains = self.subdomains.union(subdomains)
+        pages = json.get('metadata').get('pages')
         for page in range(2, pages + 1):
-            time.sleep(self.delay)
             data['page'] = page
             resp = self.post(self.addr, json=data, auth=(self.id, self.secret))
             if not resp:
                 return
-            subdomains_find = self.match(self.domain, str(resp.json()))
-            self.subdomains = self.subdomains.union(subdomains_find)
+            subdomains = self.match(self.domain, str(resp.json()))
+            self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

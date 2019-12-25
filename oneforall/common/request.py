@@ -1,65 +1,90 @@
-# coding=utf-8
-
 import asyncio
+import functools
+
 import aiohttp
+import tqdm
 from aiohttp import ClientSession
-from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
 import config
 from common import utils
 from config import logger
 
 
+def get_limit_conn():
+    limit_open_conn = config.limit_open_conn
+    if limit_open_conn is None:  # 默认情况
+        limit_open_conn = utils.get_semaphore()
+    elif not isinstance(limit_open_conn, int):  # 如果传入不是数字的情况
+        limit_open_conn = utils.get_semaphore()
+    return limit_open_conn
+
+
 def get_ports(port):
-    logger.log('INFOR', f'正在获取请求端口范围')
+    logger.log('DEBUG', f'正在获取请求探测端口范围')
     ports = set()
     if isinstance(port, set):
         ports = port
-    elif isinstance(port, str):
-        if port not in {'small', 'medium', 'large', 'xlarge'}:
-            logger.log('ERROR', f'不存在{port}等端口范围')
-            port = 'medium'
+    elif isinstance(port, list):
+        ports = set(port)
+    elif isinstance(port, tuple):
+        ports = set(port)
+    elif isinstance(port, int):
+        if 0 <= port <= 65535:
+            ports = {port}
+    elif port in {'default', 'small', 'medium', 'large'}:
+        logger.log('INFOR', f'探测{port}等端口范围')
         ports = config.ports.get(port)
-        logger.log('INFOR', f'使用{port}等端口范围')
-    if not ports:  # 意外情况 ports_range为空使用使用中等端口范围
-        logger.log('ALERT', f'使用medium等端口范围')
-        ports = config.ports.get('medium')
+    if not ports:  # 意外情况
+        logger.log('ERROR', f'指定探测端口范围有误')
+        ports = {80}
+    logger.log('INFOR', f'探测端口范围：{ports}')
     return ports
 
 
 def gen_new_datas(datas, ports):
     logger.log('INFOR', f'正在生成请求地址')
     new_datas = []
-    protocols = ['http://']
+    protocols = ['http://', 'https://']
     for data in datas:
         valid = data.get('valid')
         if valid is None:  # 子域有效性未知的才进行http请求探测
             subdomain = data.get('subdomain')
             for port in ports:
-                for protocol in protocols:
-                    if port == 443:
-                        url = f'https://{subdomain}:{port}'
-                    else:
-                        url = f'{protocol}{subdomain}:{port}'
+                if port == 80:
+                    url = f'http://{subdomain}'
                     data['id'] = None
                     data['url'] = url
-                    data['port'] = port
+                    data['port'] = 80
                     new_datas.append(data)
                     data = dict(data)  # 需要生成一个新的字典对象
+                elif port == 443:
+                    url = f'https://{subdomain}'
+                    data['id'] = None
+                    data['url'] = url
+                    data['port'] = 443
+                    new_datas.append(data)
+                    data = dict(data)  # 需要生成一个新的字典对象
+                else:
+                    for protocol in protocols:
+                        url = f'{protocol}{subdomain}:{port}'
+                        data['id'] = None
+                        data['url'] = url
+                        data['port'] = port
+                        new_datas.append(data)
+                        data = dict(data)  # 需要生成一个新的字典对象
     return new_datas
 
 
-async def fetch(session, url, semaphore):
+async def fetch(session, url):
     """
     请求
 
     :param session: session对象
     :param url: url地址
-    :param semaphore: 并发信号量
     :return: 响应对象和响应文本
     """
     timeout = aiohttp.ClientTimeout(total=config.get_timeout)
-    async with semaphore:
+    try:
         async with session.get(url,
                                ssl=config.verify_ssl,
                                allow_redirects=config.get_redirects,
@@ -69,22 +94,68 @@ async def fetch(session, url, semaphore):
             try:
                 text = await resp.text(encoding='gb2312')  # 先尝试用fb2312解码
             except UnicodeDecodeError:
-                text = await resp.text()
+                text = await resp.text(errors='ignore')
         return resp, text
+    except Exception as e:
+        return e
 
 
-def deal_results(datas, results):
-    for index, result in enumerate(results):
-        if isinstance(result, Exception):
-            logger.log('DEBUG', result.args)
-            datas[index]['reason'] = str(result.args)
-            datas[index]['valid'] = 0
-            continue
+def get_title(markup):
+    """
+    获取标题
+
+    :param markup: html标签
+    :return: 标题
+    """
+    soup = BeautifulSoup(markup, 'lxml')
+
+    title = soup.title
+    if title:
+        return title.text.strip()
+
+    h1 = soup.h1
+    if h1:
+        return h1.text.strip()
+
+    h2 = soup.h2
+    if h2:
+        return h2.text.strip()
+
+    h3 = soup.h3
+    if h2:
+        return h3.text.strip()
+
+    desc = soup.find('meta', attrs={'name': 'description'})
+    if desc:
+        return desc['content'].strip()
+
+    word = soup.find('meta', attrs={'name': 'keywords'})
+    if word:
+        return word['content'].strip()
+
+    if len(markup) <= 200:
+        return markup.strip()
+
+    text = soup.text
+    if len(text) <= 200:
+        return text.strip()
+
+    return None
+
+
+def request_callback(future, index, datas):
+    try:
+        result = future.result()
+    except Exception as e:
+        logger.log('TRACE', e.args)
+        datas[index]['reason'] = str(e.args)
+        datas[index]['valid'] = 0
+    else:
         if isinstance(result, tuple):
             resp, text = result
             datas[index]['reason'] = resp.reason
             datas[index]['status'] = resp.status
-            if resp.status >= 500:
+            if resp.status == 400 or resp.status >= 500:
                 datas[index]['valid'] = 0
             else:
                 datas[index]['valid'] = 1
@@ -92,17 +163,13 @@ def deal_results(datas, results):
                 banner = str({'Server': headers.get('Server'),
                               'Via': headers.get('Via'),
                               'X-Powered-By': headers.get('X-Powered-By')})
-                datas[index]['banner'] = banner
-                soup = BeautifulSoup(text, 'lxml')
-                title = soup.title
-                head = soup.head
-                if title:
-                    datas[index]['title'] = title.text
-                elif head:
-                    datas[index]['title'] = head.text
-                elif len(text) <= 200:
-                    datas[index]['title'] = text
-    return datas
+                datas[index]['banner'] = banner[1:-1]
+                datas[index]['title'] = get_title(text)
+                datas[index]['header'] = str(dict(headers))[1:-1]
+                datas[index]['response'] = text
+        else:
+            datas[index]['reason'] = 'Something error'
+            datas[index]['valid'] = 0
 
 
 async def bulk_get_request(datas, port):
@@ -110,19 +177,11 @@ async def bulk_get_request(datas, port):
     new_datas = gen_new_datas(datas, ports)
     logger.log('INFOR', f'正在异步进行子域的GET请求')
 
-    limit_open_conn = config.limit_open_conn
-    if limit_open_conn is None:  # 默认情况
-        limit_open_conn = utils.get_semaphore()
-    elif not isinstance(limit_open_conn, int):  # 如果传入不是数字的情况
-        limit_open_conn = utils.get_semaphore()
-    # 使用异步域名解析器 自定义域名服务器
-    resolver = AsyncResolver(nameservers=config.resolver_nameservers)
-    conn = aiohttp.TCPConnector(ssl=config.verify_ssl,
+    limit_open_conn = get_limit_conn()
+    conn = aiohttp.TCPConnector(ttl_dns_cache=300,
+                                ssl=config.verify_ssl,
                                 limit=limit_open_conn,
-                                limit_per_host=config.limit_per_host,
-                                resolver=resolver)
-
-    semaphore = asyncio.Semaphore(limit_open_conn)
+                                limit_per_host=config.limit_per_host)
     header = None
     if config.fake_header:
         header = utils.gen_fake_header()
@@ -130,12 +189,26 @@ async def bulk_get_request(datas, port):
         tasks = []
         for i, data in enumerate(new_datas):
             url = data.get('url')
-            task = asyncio.ensure_future(fetch(session, url, semaphore))
+            task = asyncio.ensure_future(fetch(session, url))
+            task.add_done_callback(functools.partial(request_callback,
+                                                     index=i,
+                                                     datas=new_datas))
             tasks.append(task)
-        if tasks:  # 任务列表里有任务不空时才进行解析
+        # 任务列表里有任务不空时才进行解析
+        if tasks:
             # 等待所有task完成 错误聚合到结果列表里
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            new_datas = deal_results(new_datas, results)
+            futures = asyncio.as_completed(tasks)
+            for future in tqdm.tqdm(futures,
+                                    total=len(tasks),
+                                    desc='Progress',
+                                    smoothing=1.0,
+                                    ncols=True):
+                await future
 
     logger.log('INFOR', f'完成异步进行子域的GET请求')
+    return new_datas
+
+
+def run_bulk_query(datas, port):
+    new_datas = asyncio.run(bulk_get_request(datas, port))
     return new_datas

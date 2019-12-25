@@ -1,4 +1,3 @@
-import time
 from common.query import Query
 
 
@@ -14,16 +13,15 @@ class Riddler(Query):
         """
         向接口查询子域并做子域匹配
         """
-        time.sleep(self.delay)
         self.header = self.get_header()
         self.proxy = self.get_proxy(self.source)
         params = {'q': 'pld:' + self.domain}
         resp = self.get(self.addr, params)
         if not resp:
             return
-        subdomains_find = self.match(self.domain, resp.text)
+        subdomains = self.match(self.domain, resp.text)
         # 合并搜索子域名搜索结果
-        self.subdomains = self.subdomains.union(subdomains_find)
+        self.subdomains = self.subdomains.union(subdomains)
 
     def run(self):
         """

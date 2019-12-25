@@ -6,6 +6,34 @@ OneForAll的更新日志格式基于[Keep a Changelog](https://keepachangelog.co
 OneForAll遵守[语义化版本格式](https://semver.org/)。
 
 ## Unreleased
+## [0.0.8](https://github.com/shmilylty/oneforall/releases/tag/v0.0.8) - 2019-10-30
+- 添加新子域监控功能
+- 优化子域爆破字典和默认参数
+- 修复端口重复问题
+- 移除aiodns依赖
+
+## [0.0.7](https://github.com/shmilylty/oneforall/releases/tag/v0.0.7) - 2019-10-18
+- 修复一些已知问题
+- 添加百度云观测接口
+- 添加添加英文Readme文档
+- 更新有关文档
+- 优化标题获取
+- 更新依赖
+
+## [0.0.6](https://github.com/shmilylty/oneforall/releases/tag/v0.0.6) - 2019-08-27
+- 修复一些已知问题
+- 添加PassiveDNS查询和Github子域搜索模块
+- 优化FoFa和BufferOver收集模块
+- 更新有关文档
+- 更新依赖
+
+## [0.0.5](https://github.com/shmilylty/oneforall/releases/tag/v0.0.5) - 2019-08-19
+- 修复一些已知Bugs
+- 优化各子域收集接口并添加新的子域收集接口
+- 添加子域DNS解析和子域HTTP探测进度条
+- 添加子域接管风险检查模块及其使用说明
+- 更新OneForAll依赖
+
 ## [0.0.4](https://github.com/shmilylty/oneforall/releases/tag/v0.0.4) - 2019-08-11
 ### 修复
 - 修复一些已知Bugs

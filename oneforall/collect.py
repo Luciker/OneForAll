@@ -3,7 +3,6 @@ import threading
 import importlib
 import config
 import dbexport
-from common.database import Database
 from config import logger
 
 
@@ -18,7 +17,7 @@ class Collect(object):
         self.collect_func = []
         self.path = None
         self.export = export
-        self.format = 'xlsx'
+        self.format = 'csv'
 
     def get_mod(self):
         """
@@ -71,17 +70,12 @@ class Collect(object):
         for thread in threads:
             thread.join()
 
-        # db = Database()
-        # db.create_table(self.domain)
-        # db.copy_table(self.domain, self.domain+'_collect')
-        # db.remove_invalid(self.domain)
-        # db.deduplicate_subdomain(self.domain)
         # 数据库导出
         if self.export:
             if not self.path:
                 name = f'{self.domain}.{self.format}'
                 self.path = config.result_save_path.joinpath(name)
-            dbexport.export(self.domain, path=self.path, format=self.format)
+            dbexport.export(self.domain, dpath=self.path, format=self.format)
         end = time.time()
         self.elapsed = round(end - start, 1)
 
